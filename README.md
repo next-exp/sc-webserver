@@ -5,8 +5,9 @@ embedded Vue 3.5.22 production page. The executable includes all web assets; no
 Node.js, Go installation, CDN, or additional runtime is needed on Windows.
 
 Captures the visible virtual desktop immediately and every **two seconds**, with
-one capture loop shared by all viewers. Windows GDI copies desktop pixels without
-invoking LabVIEW's embedded snapshot server or PrintWindow. Each capture
+one capture loop shared by all viewers. The default GDI backend copies desktop pixels; the optional Windows Graphics
+Capture backend targets one application window. Neither invokes LabVIEW's
+embedded snapshot server or PrintWindow. Each capture
 overwrites `latest.jpg` in `%TEMP%\sc-webserver`; there is no screenshot history.
 HTTP serves complete in-memory frames with `Cache-Control: no-store`.
 The browser refreshes every two seconds, shows the capture time, and warns about
@@ -39,9 +40,44 @@ directories.
 
 There is no authentication: restrict access to the intended private network or
 use an authenticated gateway before broader access. Desktop captures may expose
-unrelated windows. Minimized or covered panels are not reconstructed. A locked
-or unavailable desktop reports an error; session 0 Windows services cannot view
-the operator's desktop. A fresh screenshot does not prove healthy control loops.
+unrelated windows. Desktop capture does not reconstruct minimized or covered
+panels. A locked or unavailable desktop reports an error; session 0 Windows
+services cannot view the operator's desktop. A fresh screenshot does not prove healthy control loops.
+
+## Windows Graphics Capture
+
+The optional **WGC** backend targets a particular window with Windows Graphics
+Capture and Direct3D 11, in the same Go executable (no cgo or helper runtime).
+It requires Windows amd64, Windows 10 1903 or newer, and a D3D11-capable graphics
+adapter. List visible titled windows from the application's interactive session:
+
+```powershell
+.\sc-webserver.exe -list-windows
+.\sc-webserver.exe -capture wgc -window-title 'Example panel' -window-process 'example.exe'
+```
+
+Title matching is case-insensitive substring matching; process matching uses the
+executable basename. Both selectors can be combined. Multiple matches produce an
+error rather than capturing an arbitrary window. `-window-hwnd` accepts a numeric
+or hexadecimal handle when explicit selection is needed. Title/process selectors
+rediscover the window on every capture, allowing recovery after a window restart;
+a numeric handle must be updated after replacement. Desktop crop flags cannot be
+combined with WGC.
+
+The worker keeps a WinRT MTA apartment on one Windows thread for its lifetime.
+Each two-second tick creates a short-lived capture session and a two-frame pool,
+waits up to one second for a fresh frame, reads its pixels, then closes/releases
+all resources. There is no continuous capture between ticks. GPU readback is also
+bounded; initialization calls are synchronous. Capture errors produce the same
+stale warning and HTTP 503 behavior as desktop errors. The API status includes
+`backend` and the configured `windowTitle`.
+
+WGC can capture a covered window, but rendering remains application-dependent:
+some older applications may leave unpainted regions. Minimized windows explicitly
+report an error; restoring the window resumes capture. Windows may show a capture
+border. Locked desktops, RDP disconnection, protected windows, and remote-session
+transitions are not guaranteed to work and require deployment-specific tests.
+This backend is not a workaround for Windows session locking.
 
 ## Scheduled deployment
 
@@ -53,6 +89,11 @@ subnet, and interactive desktop username:
 ```powershell
 .\install.ps1 -LocalAddress 'YOUR_PRIVATE_IP' -AllowedRemoteAddress 'YOUR_CLIENT_SUBNET' -DesktopUser 'YOUR_DESKTOP_USER'
 ```
+
+For WGC, also pass `-Capture wgc -WindowTitle 'Example panel'` and/or
+`-WindowProcess 'example.exe'`. These selectors stay in the excluded host-local
+configuration. Existing configurations without a capture setting keep desktop
+capture.
 
 `-Port` defaults to 8085. The installer creates `NEXT SC Webserver` with an
 interactive logon trigger and a firewall rule scoped to the supplied interface

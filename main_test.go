@@ -80,3 +80,28 @@ func TestConcurrentViewersAndFrameUpdates(t *testing.T) {
 	}
 	wg.Wait()
 }
+
+func TestCaptureOptionsRejectUnsafeFallbacks(t *testing.T) {
+	cases := []struct {
+		name    string
+		options captureOptions
+		valid   bool
+	}{
+		{"default desktop", captureOptions{Backend: "desktop"}, true},
+		{"title selected WGC", captureOptions{Backend: "wgc", WindowTitle: "Example panel"}, true},
+		{"process selected WGC", captureOptions{Backend: "wgc", WindowProcess: "example.exe"}, true},
+		{"handle selected WGC", captureOptions{Backend: "wgc", WindowHWND: 1}, true},
+		{"missing WGC target", captureOptions{Backend: "wgc"}, false},
+		{"selector with desktop", captureOptions{Backend: "desktop", WindowTitle: "Example panel"}, false},
+		{"unknown backend", captureOptions{Backend: "other"}, false},
+		{"crop with WGC", captureOptions{Backend: "wgc", WindowTitle: "Example panel", Rect: image.Rect(0, 0, 100, 100)}, false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			err := c.options.validate()
+			if (err == nil) != c.valid {
+				t.Fatalf("valid=%v: %v", c.valid, err)
+			}
+		})
+	}
+}

@@ -101,3 +101,23 @@ func captureScreen(rect image.Rectangle) (image.Image, error) {
 	}
 	return &image.RGBA{Pix: pixels, Stride: rect.Dx() * 4, Rect: image.Rect(0, 0, rect.Dx(), rect.Dy())}, nil
 }
+
+func captureWithOptions(o captureOptions) (image.Image, error) {
+	if o.Backend == "wgc" {
+		return captureWGC(o)
+	}
+	return captureScreen(o.Rect)
+}
+
+func captureWorkerSetup(o captureOptions) (func(), error) {
+	runtime.LockOSThread()
+	if o.Backend == "wgc" {
+		cleanup, err := initWGCThread()
+		if err != nil {
+			runtime.UnlockOSThread()
+			return nil, err
+		}
+		return func() { cleanup(); runtime.UnlockOSThread() }, nil
+	}
+	return runtime.UnlockOSThread, nil
+}

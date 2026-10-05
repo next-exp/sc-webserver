@@ -32,6 +32,8 @@ type status struct {
 	CaptureMS   int64     `json:"captureMs"`
 	Sequence    uint64    `json:"sequence"`
 	IntervalMS  int64     `json:"intervalMs"`
+	Backend     string    `json:"backend"`
+	WindowTitle string    `json:"windowTitle,omitempty"`
 }
 type store struct {
 	sync.RWMutex
@@ -39,9 +41,9 @@ type store struct {
 	jpeg  []byte
 }
 
-func (s *store) capture(path string, quality int, rect image.Rectangle) {
+func (s *store) capture(path string, quality int, options captureOptions) {
 	started := time.Now()
-	img, err := captureScreen(rect)
+	img, err := captureWithOptions(options)
 	var buf bytes.Buffer
 	if err == nil {
 		err = jpeg.Encode(&buf, img, &jpeg.Options{Quality: quality})
@@ -113,7 +115,24 @@ func main() {
 	y := flag.Int("y", 0, "crop top")
 	width := flag.Int("width", 0, "crop width; 0 captures whole desktop")
 	height := flag.Int("height", 0, "crop height")
+	backend := flag.String("capture", "desktop", "capture backend: desktop or wgc")
+	windowTitle := flag.String("window-title", "", "WGC target title substring (case-insensitive)")
+	windowProcess := flag.String("window-process", "", "WGC target executable basename")
+	windowHWND := flag.Uint64("window-hwnd", 0, "WGC target window handle (decimal or 0x hex)")
+	list := flag.Bool("list-windows", false, "list visible titled windows in this session as JSON and exit")
 	flag.Parse()
+	if *list {
+		windows, err := listWindows()
+		if err != nil {
+			log.Fatal(err)
+		}
+		json.NewEncoder(os.Stdout).Encode(windows)
+		return
+	}
+	options := captureOptions{Backend: *backend, WindowTitle: *windowTitle, WindowProcess: *windowProcess, WindowHWND: *windowHWND, Rect: image.Rect(*x, *y, *x+*width, *y+*height)}
+	if err := options.validate(); err != nil {
+		log.Fatal(err)
+	}
 	if *quality < 1 || *quality > 100 || *width < 0 || *height < 0 || (*width == 0) != (*height == 0) {
 		log.Fatal("invalid JPEG quality or crop dimensions")
 	}
@@ -128,14 +147,24 @@ func main() {
 	}
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
-	s := &store{state: status{IntervalMS: 2000}}
+	s := &store{state: status{IntervalMS: 2000, Backend: *backend, WindowTitle: *windowTitle}}
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
+		cleanup, err := captureWorkerSetup(options)
+		if err != nil {
+			s.Lock()
+			s.state.Error = err.Error()
+			s.state.AttemptedAt = time.Now()
+			s.Unlock()
+			<-ctx.Done()
+			return
+		}
+		defer cleanup()
 		ticker := time.NewTicker(2 * time.Second)
 		defer ticker.Stop()
 		for {
-			s.capture(path, *quality, image.Rect(*x, *y, *x+*width, *y+*height))
+			s.capture(path, *quality, options)
 			select {
 			case <-ctx.Done():
 				return

@@ -1,5 +1,5 @@
 const {test,expect}=require('@playwright/test');
-test('Desktop screenshot loads, refreshes, and reports outages',async({page})=>{
+test('Screenshot loads, refreshes, and reports outages',async({page})=>{
  const errors=[];page.on('pageerror',error=>errors.push(error.message));
  let frames=0;page.on('response',response=>{if(response.url().includes('/screenshot.jpg')&&response.status()===200)frames++;});
  await page.goto(process.env.SC_WEBSERVER_URL || 'http://127.0.0.1:8085/');
