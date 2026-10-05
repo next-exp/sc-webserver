@@ -1,0 +1,2 @@
+# gofmt emits LF on every platform; preserve it in Windows checkouts.
+*.go text eol=lf
