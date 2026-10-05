@@ -1,0 +1,25 @@
+const {test,expect}=require('@playwright/test');
+test('Desktop screenshot loads, refreshes, and reports outages',async({page})=>{
+ const errors=[];page.on('pageerror',error=>errors.push(error.message));
+ let frames=0;page.on('response',response=>{if(response.url().includes('/screenshot.jpg')&&response.status()===200)frames++;});
+ await page.goto(process.env.SC_WEBSERVER_URL || 'http://127.0.0.1:8085/');
+ await expect(page.locator('header span')).toHaveText('Live · every 2 seconds');
+ const image=page.getByAltText('Latest slow control desktop screenshot');
+ await expect(image).toBeVisible();
+ expect(await image.evaluate(el=>el.naturalWidth)).toBeGreaterThan(0);
+ const initial=await image.getAttribute('src');
+ await expect.poll(()=>frames,{timeout:10000}).toBeGreaterThanOrEqual(4);
+ expect(await image.getAttribute('src')).not.toBe(initial);
+ if (process.env.SC_SCREENSHOT_PATH) await page.screenshot({path:process.env.SC_SCREENSHOT_PATH,fullPage:true});
+ await page.route('**/api/status',route=>route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({sequence:100,capturedAt:'2000-01-01T00:00:00Z',error:'',width:1280,height:1024})}));
+ await expect(page.locator('header span')).toHaveText('Capture unavailable or stale');
+ await expect(image).toHaveClass('stale');
+ await page.unroute('**/api/status');
+ await expect(page.locator('header span')).toHaveText('Live · every 2 seconds');
+ await page.route('**/api/status',route=>route.abort());
+ await expect(page.locator('header span')).not.toHaveText('Live · every 2 seconds');
+ await page.unroute('**/api/status');
+ await expect(page.locator('header span')).toHaveText('Live · every 2 seconds');
+ expect(errors).toEqual([]);
+ console.log(JSON.stringify({frames,naturalWidth:await image.evaluate(el=>el.naturalWidth),naturalHeight:await image.evaluate(el=>el.naturalHeight),errors}));
+});

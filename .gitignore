@@ -1,0 +1,9 @@
+/dist/
+*.log
+node_modules/
+test-results/
+playwright-report/
+deployment.json
+*.jpg
+*.jpeg
+*.png

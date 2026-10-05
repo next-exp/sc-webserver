@@ -1,0 +1,3 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Slow control screen</title><link rel="stylesheet" href="/style.css"><script defer src="/vue.global.prod.js"></script><script defer src="/app.js"></script></head>
+<body><main id="app"><header><h1>Slow control screen</h1><span :class="{error: warning}">{{ warning || 'Live · every 2 seconds' }}</span><p>Last capture: {{ captured }} · {{ status.width || '—' }} × {{ status.height || '—' }}</p></header><img v-if="imageURL" :src="imageURL" alt="Latest slow control desktop screenshot" :class="{stale: warning}"><p v-else>Waiting for a desktop capture…</p><noscript>Enable JavaScript to view and refresh screenshots.</noscript></main></body></html>
