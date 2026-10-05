@@ -8,7 +8,7 @@ Captures the visible virtual desktop immediately and every **two seconds**, with
 one capture loop shared by all viewers. The default GDI backend copies desktop pixels; the optional Windows Graphics
 Capture backend targets one application window. Neither invokes LabVIEW's
 embedded snapshot server or PrintWindow. Each capture
-overwrites `latest.jpg` in `%TEMP%\sc-webserver`; there is no screenshot history.
+overwrites `latest.jpg` (or `latest.png` with `-format png`) in `%TEMP%\sc-webserver`; there is no screenshot history.
 HTTP serves complete in-memory frames with `Cache-Control: no-store`.
 The browser refreshes every two seconds, shows the capture time, and warns about
 errors or stale frames. `/healthz` and `/screenshot.jpg` return 503 when capture
@@ -42,6 +42,14 @@ Run inside the unlocked Windows desktop session containing the panels:
 # Optional fixed crop, in native desktop pixels:
 .\sc-webserver.exe -x 100 -y 100 -width 1280 -height 720
 ```
+
+Use `-format png` for lossless PNG with Go's default compression; JPEG quality
+85 remains the default and `-quality` applies only to JPEG. The browser loads the
+format-independent `/screenshot` endpoint. `/screenshot.jpg` and
+`/screenshot.png` serve only their matching configured format (otherwise 404).
+The status includes `format`, `imageBytes`, and `encodeMs`; `captureMs` remains
+the entire capture/encode/file-write duration. Switching formats removes the
+other format's latest image on startup, so there is no image history.
 
 Use `-listen` with your private interface address for remote viewing. `-temp-dir`
 selects the capture directory; `-quality` sets JPEG quality (default 85). Default
@@ -111,7 +119,8 @@ For WGC, also pass `-Capture wgc -WindowTitle 'Example panel'` and/or
 configuration. Existing configurations without a capture setting keep desktop
 capture.
 
-`-Port` defaults to 8085. The installer creates `NEXT SC Webserver` with an
+`-Format png` selects PNG in the installer; existing deployments without a format
+setting remain JPEG. `-Port` defaults to 8085. The installer creates `NEXT SC Webserver` with an
 interactive logon trigger and a firewall rule scoped to the supplied interface
 and clients. The task has no execution limit and retries failures up to three
 times. The launcher overwrites `sc-webserver.log` at each start; there are no
@@ -142,6 +151,26 @@ To remove it, stop the task and executable, then:
 Unregister-ScheduledTask -TaskName 'NEXT SC Webserver' -Confirm:$false
 Remove-NetFirewallRule -Name 'NEXT-SC-Webserver-ZT'
 ```
+
+Measured JPEG/PNG size, CPU and memory results are in [BENCHMARKS.md](BENCHMARKS.md).
+
+## Windows image-format benchmark
+
+Run in the interactive desktop session:
+
+```powershell
+.\sc-webserver.exe -capture desktop -benchmark-frames 30 -benchmark-output benchmark.json
+```
+
+The benchmark captures the raw desktop once per two-second tick, encodes those
+same pixels as JPEG (the chosen `-quality`, default 85) and PNG, and alternates
+encoder order. It warms up three frames, verifies PNG pixels round-trip exactly,
+and reports image size, wall time, this process's CPU time and Go heap allocation
+traffic for capture, encoding and buffered file writes. CPU accounting includes
+GC and has Windows timer granularity; heap allocation is not peak resident RAM.
+It does not measure LabVIEW CPU or control timing. Temporary benchmark images
+are overwritten and removed on completion; the JSON contains measurements only.
+Keep JSON reports outside Git unless reviewed and sanitized.
 
 ## Browser check
 

@@ -18,7 +18,7 @@ func TestFreshStaleAndFailedFrames(t *testing.T) {
 	if err := jpeg.Encode(&b, img, nil); err != nil {
 		t.Fatal(err)
 	}
-	s := &store{state: status{CapturedAt: time.Now(), Sequence: 1}, jpeg: b.Bytes()}
+	s := &store{state: status{CapturedAt: time.Now(), Sequence: 1}, frame: b.Bytes()}
 	h := s.handler()
 	check := func(path string, want int) {
 		t.Helper()
@@ -48,14 +48,14 @@ func TestFreshStaleAndFailedFrames(t *testing.T) {
 	check("/screenshot.jpg", 503)
 	check("/healthz", 503)
 	check("/api/status", 200)
-	s.jpeg = nil
+	s.frame = nil
 	s.state.Error = ""
 	s.state.CapturedAt = time.Time{}
 	check("/screenshot.jpg", 503)
 	check("/healthz", 503)
 }
 func TestConcurrentViewersAndFrameUpdates(t *testing.T) {
-	s := &store{state: status{CapturedAt: time.Now(), Sequence: 1}, jpeg: []byte("frame")}
+	s := &store{state: status{CapturedAt: time.Now(), Sequence: 1}, frame: []byte("frame")}
 	h := s.handler()
 	var wg sync.WaitGroup
 	for i := 0; i < 20; i++ {
@@ -73,7 +73,7 @@ func TestConcurrentViewersAndFrameUpdates(t *testing.T) {
 	}
 	for i := 0; i < 100; i++ {
 		s.Lock()
-		s.jpeg = []byte("updated frame")
+		s.frame = []byte("updated frame")
 		s.state.CapturedAt = time.Now()
 		s.state.Sequence++
 		s.Unlock()

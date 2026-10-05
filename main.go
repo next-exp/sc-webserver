@@ -8,7 +8,6 @@ import (
 	"flag"
 	"fmt"
 	"image"
-	"image/jpeg"
 	"io/fs"
 	"log"
 	"net"
@@ -24,6 +23,9 @@ import (
 var web embed.FS
 
 type status struct {
+	Format      string    `json:"format"`
+	ImageBytes  int       `json:"imageBytes"`
+	EncodeMS    int64     `json:"encodeMs"`
 	CapturedAt  time.Time `json:"capturedAt"`
 	AttemptedAt time.Time `json:"attemptedAt"`
 	Error       string    `json:"error"`
@@ -38,16 +40,18 @@ type status struct {
 type store struct {
 	sync.RWMutex
 	state status
-	jpeg  []byte
+	frame []byte
 }
 
-func (s *store) capture(path string, quality int, options captureOptions) {
+func (s *store) capture(path string, encoding encodingOptions, options captureOptions) {
 	started := time.Now()
 	img, err := captureWithOptions(options)
 	var buf bytes.Buffer
+	encodeStarted := time.Now()
 	if err == nil {
-		err = jpeg.Encode(&buf, img, &jpeg.Options{Quality: quality})
+		err = encoding.encode(&buf, img)
 	}
+	encodeMS := time.Since(encodeStarted).Milliseconds()
 	// Readers use a complete in-memory frame; the fixed temporary file is overwritten,
 	// with no frame history and no concurrent file readers.
 	if err == nil {
@@ -65,7 +69,10 @@ func (s *store) capture(path string, quality int, options captureOptions) {
 	s.state.CapturedAt = started
 	s.state.Width, s.state.Height = img.Bounds().Dx(), img.Bounds().Dy()
 	s.state.Sequence++
-	s.jpeg = buf.Bytes()
+	s.frame = buf.Bytes()
+	s.state.Format = encoding.Format
+	s.state.ImageBytes = buf.Len()
+	s.state.EncodeMS = encodeMS
 }
 func (s *store) handler() http.Handler {
 	assets, _ := fs.Sub(web, "web")
@@ -88,18 +95,26 @@ func (s *store) handler() http.Handler {
 		}
 		w.Write([]byte("ok\n"))
 	})
-	mux.HandleFunc("GET /screenshot.jpg", func(w http.ResponseWriter, r *http.Request) {
+	serveFrame := func(w http.ResponseWriter, r *http.Request) {
 		s.RLock()
-		frame, st := s.jpeg, s.state
+		frame, st := s.frame, s.state
 		s.RUnlock()
+		encoding := encodingOptions{Format: st.Format}
+		if r.URL.Path != "/screenshot" && r.URL.Path != "/screenshot."+encoding.extension() {
+			http.NotFound(w, r)
+			return
+		}
 		if len(frame) == 0 || st.Error != "" || time.Since(st.CapturedAt) > 6*time.Second {
 			http.Error(w, "capture unavailable or stale", 503)
 			return
 		}
-		w.Header().Set("Content-Type", "image/jpeg")
+		w.Header().Set("Content-Type", encoding.contentType())
 		w.Header().Set("X-Captured-At", st.CapturedAt.UTC().Format(time.RFC3339Nano))
 		w.Write(frame)
-	})
+	}
+	for _, route := range []string{"/screenshot", "/screenshot.jpg", "/screenshot.png"} {
+		mux.HandleFunc("GET "+route, serveFrame)
+	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
@@ -108,8 +123,11 @@ func (s *store) handler() http.Handler {
 	})
 }
 func main() {
-	listen := flag.String("listen", "127.0.0.1:8085", "HTTP listen address (use the ZeroTier IP for remote viewing)")
-	temp := flag.String("temp-dir", filepath.Join(os.TempDir(), "sc-webserver"), "temporary directory; only latest.jpg is retained")
+	listen := flag.String("listen", "127.0.0.1:8085", "HTTP listen address (use a private interface for remote viewing)")
+	temp := flag.String("temp-dir", filepath.Join(os.TempDir(), "sc-webserver"), "temporary directory; only the latest image is retained")
+	format := flag.String("format", "jpeg", "image format: jpeg or png (lossless, default compression)")
+	benchFrames := flag.Int("benchmark-frames", 0, "benchmark JPEG/PNG from identical captures, at two-second intervals, then exit")
+	benchOutput := flag.String("benchmark-output", "", "benchmark JSON output file (default stdout)")
 	quality := flag.Int("quality", 85, "JPEG quality, 1..100")
 	x := flag.Int("x", 0, "crop left (desktop coordinates)")
 	y := flag.Int("y", 0, "crop top")
@@ -133,13 +151,34 @@ func main() {
 	if err := options.validate(); err != nil {
 		log.Fatal(err)
 	}
-	if *quality < 1 || *quality > 100 || *width < 0 || *height < 0 || (*width == 0) != (*height == 0) {
+	encoding := encodingOptions{Format: *format, Quality: *quality}
+	if err := encoding.validate(); err != nil {
+		log.Fatal(err)
+	}
+	if *width < 0 || *height < 0 || (*width == 0) != (*height == 0) {
 		log.Fatal("invalid JPEG quality or crop dimensions")
+	}
+	if *benchFrames < 0 {
+		log.Fatal("benchmark frame count must be nonnegative")
+	}
+	if *benchFrames > 0 {
+		if err := benchmarkCapture(options, *quality, *benchFrames, *benchOutput); err != nil {
+			log.Fatal(err)
+		}
+		return
 	}
 	if err := os.MkdirAll(*temp, 0700); err != nil {
 		log.Fatal(err)
 	}
-	path := filepath.Join(*temp, "latest.jpg")
+	path := filepath.Join(*temp, "latest."+encoding.extension())
+	// Remove the other format on startup, including after an abrupt previous exit.
+	other := "latest.png"
+	if encoding.Format == "png" {
+		other = "latest.jpg"
+	}
+	if err := os.Remove(filepath.Join(*temp, other)); err != nil && !os.IsNotExist(err) {
+		log.Fatal(err)
+	}
 	defer os.Remove(path)
 	listener, err := net.Listen("tcp", *listen)
 	if err != nil {
@@ -147,7 +186,7 @@ func main() {
 	}
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
-	s := &store{state: status{IntervalMS: 2000, Backend: *backend, WindowTitle: *windowTitle}}
+	s := &store{state: status{Format: encoding.Format, IntervalMS: 2000, Backend: *backend, WindowTitle: *windowTitle}}
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
@@ -164,7 +203,7 @@ func main() {
 		ticker := time.NewTicker(2 * time.Second)
 		defer ticker.Stop()
 		for {
-			s.capture(path, *quality, options)
+			s.capture(path, encoding, options)
 			select {
 			case <-ctx.Done():
 				return

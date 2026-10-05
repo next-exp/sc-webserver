@@ -75,9 +75,9 @@ jobs:
           go build -trimpath -o dist/sc-webserver-windows-amd64/sc-webserver.exe .
       - name: Assemble deployment files and checksums
         run: |
-          cp scripts/install.ps1 scripts/run.ps1 README.md TESTING.md dist/sc-webserver-windows-amd64/
+          cp scripts/install.ps1 scripts/run.ps1 README.md TESTING.md BENCHMARKS.md dist/sc-webserver-windows-amd64/
           cd dist/sc-webserver-windows-amd64
-          sha256sum sc-webserver.exe install.ps1 run.ps1 README.md TESTING.md > SHA256SUMS.txt
+          sha256sum sc-webserver.exe install.ps1 run.ps1 README.md TESTING.md BENCHMARKS.md > SHA256SUMS.txt
       - name: Upload Windows deployment package
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:

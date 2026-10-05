@@ -11,7 +11,7 @@ Vue.createApp({
     const status = await response.json();
     this.status = status;
     if (status.error || !status.sequence || Date.now() - Date.parse(status.capturedAt) > 6000) throw new Error(status.error || 'Capture unavailable or stale');
-    const frame = await fetch('screenshot.jpg?t=' + status.sequence, {cache: 'no-store', signal: AbortSignal.timeout(5000)});
+    const frame = await fetch('screenshot?t=' + status.sequence, {cache: 'no-store', signal: AbortSignal.timeout(5000)});
     if (!frame.ok) throw new Error('Capture unavailable');
     const blob = await frame.blob();
     // Decode before replacing the visible frame to avoid flicker or partial images.

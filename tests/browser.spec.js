@@ -1,7 +1,7 @@
 const {test,expect}=require('@playwright/test');
 test('Screenshot loads, refreshes, and reports outages',async({page})=>{
  const errors=[];page.on('pageerror',error=>errors.push(error.message));
- let frames=0;page.on('response',response=>{if(response.url().includes('/screenshot.jpg')&&response.status()===200)frames++;});
+ let frames=0;page.on('response',response=>{if(response.url().includes('/screenshot')&&response.status()===200)frames++;});
  await page.goto(process.env.SC_WEBSERVER_URL || 'http://127.0.0.1:8085/');
  await expect(page.locator('header span')).toHaveText('Live · every 2 seconds');
  const image=page.getByAltText('Latest slow control desktop screenshot');
