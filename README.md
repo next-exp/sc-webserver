@@ -79,6 +79,10 @@ border. Locked desktops, RDP disconnection, protected windows, and remote-sessio
 transitions are not guaranteed to work and require deployment-specific tests.
 This backend is not a workaround for Windows session locking.
 
+The page uses relative asset/API URLs and can run behind a proxy that strips a
+path prefix. Redirect the bare prefix to a trailing slash, and proxy all paths
+under that prefix to this server.
+
 ## Scheduled deployment
 
 Copy `dist/sc-webserver.exe`, `scripts/run.ps1`, and `scripts/install.ps1` into
@@ -138,7 +142,9 @@ SC_WEBSERVER_URL=http://YOUR_PRIVATE_IP:8085/ npx playwright test
 ```
 
 `SC_WEBSERVER_URL` defaults to localhost. Set `SC_SCREENSHOT_PATH` outside the
-repository to save an optional browser screenshot. Request-failure simulations
+repository to save an optional browser screenshot. For a proxy with HTTP Basic
+Auth, supply `SC_HTTP_USERNAME` and `SC_HTTP_PASSWORD` through your secret manager
+or environment; keep their values outside the repository. Request-failure simulations
 apply only in the test browser and do not change the Windows session.
 
 Vue is vendored with its MIT license from

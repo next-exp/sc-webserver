@@ -97,3 +97,24 @@ then unlocked the existing session using credentials obtained in memory.
 
 This result applies to this deployment and application state. It is not a
 guarantee of live telemetry during a lock or remote-session transition.
+
+## Desktop deployment behind a path-prefix proxy
+
+Validated on 2026-10-05 after changing embedded asset/API URLs to relative paths.
+
+- Windows build and native/Windows-target vet passed; race tests passed.
+- Deployed executable SHA256 verified:
+  `89f5c273b454e3cd0247625c1fc00c6a5f3511721789d9c82a3c4837e622f97c`.
+- Desktop backend reports 1920 x 1200 at a two-second interval; sampled capture
+  durations 71–74 ms. Interactive task is enabled and running.
+- Reverse proxy strips the path prefix and redirects the bare prefix to a
+  trailing slash. Authenticated assets, status, health and JPEG return HTTP 200;
+  unauthenticated page, status and JPEG return HTTP 401. HTTPS trust validated.
+- Chromium checks passed against both the private origin and authenticated HTTPS
+  prefix, each with six image responses, 1920 x 1200 decoded dimensions, no page
+  errors, and simulated stale/network failure/recovery.
+- Ingress was validated before a graceful reload. Existing authenticated and
+  Guacamole route checks returned their expected responses.
+- Credentials are supplied to tests through environment variables and remain
+  outside this repository. Deployment addresses and proxy configuration remain
+  host-local.
