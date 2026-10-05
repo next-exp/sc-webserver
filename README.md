@@ -14,6 +14,18 @@ The browser refreshes every two seconds, shows the capture time, and warns about
 errors or stale frames. `/healthz` and `/screenshot.jpg` return 503 when capture
 fails or the last frame is more than six seconds old.
 
+## Continuous integration
+
+GitHub Actions runs on pushes, pull requests, and manual dispatch. It checks Go
+formatting, runs vet and tests on Linux and Windows, and runs the race detector
+on Linux. After both platforms pass, it builds the Windows amd64 executable
+with the Vue assets embedded and uploads `sc-webserver-windows-amd64` for 30 days.
+Download that artifact from the successful workflow run: it includes the
+executable, installation/launcher scripts, documentation, and `SHA256SUMS.txt`.
+CI uses GitHub-hosted runners and requires no deployment credentials. Live
+screen capture and browser checks against a Windows desktop remain deployment
+validation steps.
+
 ## Build and run
 
 ```sh

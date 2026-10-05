@@ -1,0 +1,87 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+          cache: false # No external Go dependencies or go.sum.
+      - name: Check formatting
+        shell: bash
+        run: |
+          files="$(gofmt -l .)"
+          if [ -n "$files" ]; then
+            printf '%s\n' "$files"
+            exit 1
+          fi
+      - name: Vet
+        run: go vet ./...
+      - name: Test with race detector
+        if: runner.os == 'Linux'
+        run: go test -race ./...
+      - name: Test on Windows
+        if: runner.os == 'Windows'
+        run: go test ./...
+
+  windows-package:
+    name: Windows executable and deployment files
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: Vet Windows target
+        env:
+          GOOS: windows
+          GOARCH: amd64
+          CGO_ENABLED: '0'
+        run: go vet ./...
+      - name: Build Windows executable with embedded Vue assets
+        env:
+          GOOS: windows
+          GOARCH: amd64
+          CGO_ENABLED: '0'
+        run: |
+          mkdir -p dist/sc-webserver-windows-amd64
+          go build -trimpath -o dist/sc-webserver-windows-amd64/sc-webserver.exe .
+      - name: Assemble deployment files and checksums
+        run: |
+          cp scripts/install.ps1 scripts/run.ps1 README.md TESTING.md dist/sc-webserver-windows-amd64/
+          cd dist/sc-webserver-windows-amd64
+          sha256sum sc-webserver.exe install.ps1 run.ps1 README.md TESTING.md > SHA256SUMS.txt
+      - name: Upload Windows deployment package
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: sc-webserver-windows-amd64
+          path: dist/sc-webserver-windows-amd64/
+          if-no-files-found: error
+          retention-days: 30
