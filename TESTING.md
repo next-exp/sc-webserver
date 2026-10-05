@@ -28,7 +28,7 @@ Initial desktop-backend validation on 2026-10-05, before WGC was added, at
 - Brief resource sample: 0.21875 process CPU seconds over 6.0346 wall seconds,
   about 40.3 MiB working set, 233 handles. This is a short pilot measurement.
 
-Physical desktop lock/unlock, minimized/covered panel behavior, RDP disconnect,
+At this initial stage, desktop lock/unlock, minimized/covered panel behavior, RDP disconnect,
 reboot/login, and long-duration operation were not exercised. The browser outage
 checks simulate responses only in the test browser. The screenshot program uses
 the currently visible desktop; independent LabVIEW telemetry remains necessary
@@ -54,8 +54,8 @@ external capture executable or runtime.
   that an application will render every hidden/offscreen region.
 - Actual host/window selectors are stored only in the excluded deployment
   configuration, not in this repository. Test screenshots remain outside Git.
-- Desktop locks, RDP disconnection, application restart, reboot/login, and extended
-  soak testing remain untested. No lock-screen capture guarantee is made.
+- RDP disconnection, application restart, reboot/login, and extended soak testing
+  remain untested. See the lock/unlock comparison below.
 
 - Final build SHA256 verified against the deployed executable:
   `480ff63e14ba5c05a0e180afc043955e9f12413d58fbc47daecd1785394e7d18`.
@@ -69,3 +69,31 @@ external capture executable or runtime.
 - Temporary behavior-test tasks and screenshots removed; normal deployment uses
   one overwritten temporary `latest.jpg`. Real deployment configuration remains
   outside Git. Gitleaks scan passed.
+
+## Lock/unlock comparison
+
+Tested both backends concurrently on 2026-10-05 in the same Windows 10 build
+19045 console session, with the legacy viewer running. Locked the session using
+`LockWorkStation`, inspected the lock and password-entry screens through VNC,
+then unlocked the existing session using credentials obtained in memory.
+
+- Desktop/GDI: the lock-screen wallpaper could initially be captured. At the
+  secure password-entry desktop, capture reported `interactive desktop
+  unavailable` (access denied). Sequence and successful capture time stopped
+  advancing; both `/healthz` and `/screenshot.jpg` returned HTTP 503.
+- WGC: continued returning valid 1466 x 934 viewer images, HTTP 200, and advancing
+  capture sequences at two-second intervals, including at the password screen.
+  Three sampled JPEGs across four seconds were byte-identical. The viewer's
+  displayed plots were static, so this does not establish whether application
+  data would update while locked. Successful capture timestamps describe capture
+  attempts, not the age of the data drawn by the application.
+- Unlock: desktop/GDI resumed successful captures automatically without a process
+  restart. WGC remained healthy throughout and after unlock. The viewer process
+  and normal WGC server retained their original process IDs.
+- RDP and VNC listeners were verified; recovery used VNC to preserve the existing
+  console session. RDP login/disconnect behavior was not tested.
+- Temporary tasks, secondary capture process, and remote test images were removed.
+  The session was left unlocked, with the viewer and normal server running.
+
+This result applies to this deployment and application state. It is not a
+guarantee of live telemetry during a lock or remote-session transition.
